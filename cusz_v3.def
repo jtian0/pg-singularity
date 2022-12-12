@@ -1,0 +1,18 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%files
+    /home/jtian/src/516-singularity/cmake-3.25.1-linux-x86_64.tar.gz /root
+
+%environment
+    export SINGULARITY_MPICH_DIR=/usr
+    export PATH=/root/cmake-3.25.1-linux-x86_64/bin:$PATH
+
+%post
+    apt-get -y update
+    DEBIAN_FRONTEND=noninteractive apt-get -y install build-essential git wget vim 
+    DEBIAN_FRONTEND=noninteractive apt-get -y install nvidia-cuda-toolkit
+    DEBIAN_FRONTEND=noninteractive apt-get -y install nvidia-cuda-toolkit-gcc
+    cd /root
+
+%runscript
