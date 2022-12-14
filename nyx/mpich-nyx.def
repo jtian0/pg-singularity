@@ -1,0 +1,83 @@
+Bootstrap: docker
+From: ubuntu:20.04
+
+%files
+    /home/cc/mpi-hello.c /opt
+
+%environment
+    export MPICH_DIR=/opt/mpich-3.3
+    export SINGULARITY_MPICH_DIR=$MPICH_DIR
+    export SINGULARITYENV_APPEND_PATH=$MPICH_DIR/bin
+    export SINGULAIRTYENV_APPEND_LD_LIBRARY_PATH=$MPICH_DIR/lib
+
+%post
+    echo "Installing required packages..."
+    apt-get update && apt-get install -y wget git bash gcc gfortran g++ make
+
+    # Information about the version of MPICH to use
+    export MPICH_VERSION=3.3
+    export MPICH_URL="http://www.mpich.org/static/downloads/$MPICH_VERSION/mpich-$MPICH_VERSION.tar.gz"
+    export MPICH_DIR=/opt/mpich
+
+    echo "Installing MPICH..."
+    mkdir -p /tmp/mpich
+    mkdir -p /opt
+    # Download
+    cd /tmp/mpich && wget -O mpich-$MPICH_VERSION.tar.gz $MPICH_URL && tar xzf mpich-$MPICH_VERSION.tar.gz
+    # Compile and install
+    cd /tmp/mpich/mpich-$MPICH_VERSION && ./configure --prefix=$MPICH_DIR && make install
+    # Set env variables so we can compile our application
+    export PATH=$MPICH_DIR/bin:$PATH
+    export LD_LIBRARY_PATH=$MPICH_DIR/lib:$LD_LIBRARY_PATH
+    export MANPATH=$MPICH_DIR/share/man:$MANPATH
+
+    echo "Compiling the MPI application..."
+    cd /opt && mpicc -o mpi-hello mpi-hello.c
+
+    DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y libboost-all-dev
+    apt update
+    apt install -y software-properties-common lsb-release
+    apt clean all
+    wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
+    apt-add-repository "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main"
+    apt update
+    apt install -y kitware-archive-keyring
+    rm /etc/apt/trusted.gpg.d/kitware.gpg
+    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6AF7F09730B3F0A4
+    apt update
+    apt install -y cmake
+
+    cd /opt/
+
+    git clone https://github.com/LLNL/sundials
+    cd sundials
+    mkdir build install
+    cd build
+    cmake -DCMAKE_INSTALL_PREFIX=../install -DCMAKE_C_COMPILER=$(which gcc) -DCMAKE_CXX_COMPILER=$(which g++) -DOPENMP_ENABLE=ON -DCUDA_ENABLE=OFF -DMPI_ENABLE=OFF ../
+    make -j
+    make install
+
+    cd /opt/
+
+    git clone https://github.com/AMReX-codes/amrex.git
+    cd amrex
+    mkdir build install
+    cd build
+    cmake .. -DENABLE_MPI=ON -DENABLE_AMRDATA=ON -DCMAKE_BUILD_TYPE=Release -DENABLE_DP=OFF -DENABLE_LINEAR_SOLVERS=OFF -DCMAKE_INSTALL_PREFIX=../install
+    make -j
+    make install
+
+    cd /opt/
+
+    git clone https://github.com/AMReX-Astro/Nyx.git
+    cd Nyx/Exec/LyA/
+    export AMREX_HOME=/opt/amrex/
+    export SUNDIALS_LIB_DIR=/opt/sundials/install/lib
+    export SUNDIALS_ROOT=/opt/sundials/install/
+    make
+
+%runscript
+    cd /opt/Nyx/Exec/LyA/
+    pwd
+    exec ./Nyx3d.gnu.TPROF.MPI.OMP.ex ./inputs
+

@@ -1,0 +1,81 @@
+Bootstrap: docker
+From: ubuntu:20.04
+
+%files
+    /home/exouser/sianjin/mpi-hello.c /opt
+
+%environment
+    export OMPI_DIR=/opt/ompi
+    export SINGULARITY_OMPI_DIR=$OMPI_DIR
+    export SINGULARITYENV_APPEND_PATH=$OMPI_DIR/bin
+    export SINGULAIRTYENV_APPEND_LD_LIBRARY_PATH=$OMPI_DIR/lib
+
+%post
+    echo "Installing required packages..."
+    apt-get update && apt-get install -y wget git bash gcc gfortran g++ make file
+
+    echo "Installing Open MPI"
+    export OMPI_DIR=/opt/ompi
+    export OMPI_VERSION=4.1.1
+    export OMPI_URL="https://download.open-mpi.org/release/open-mpi/v4.1/openmpi-$OMPI_VERSION.tar.bz2"
+    mkdir -p /tmp/ompi
+    mkdir -p /opt
+    # Download
+    cd /tmp/ompi && wget -O openmpi-$OMPI_VERSION.tar.bz2 $OMPI_URL && tar -xjf openmpi-$OMPI_VERSION.tar.bz2
+    # Compile and install
+    cd /tmp/ompi/openmpi-$OMPI_VERSION && ./configure --prefix=$OMPI_DIR && make install
+    # Set env variables so we can compile our application
+    export PATH=$OMPI_DIR/bin:$PATH
+    export LD_LIBRARY_PATH=$OMPI_DIR/lib:$LD_LIBRARY_PATH
+    export MANPATH=$OMPI_DIR/share/man:$MANPATH
+
+    echo "Compiling the MPI application..."
+    cd /opt && mpicc -o mpi-hello mpi-hello.c
+
+    DEBIAN_FRONTEND=noninteractive TZ=Etc/UTC apt-get install -y libboost-all-dev
+    apt update
+    apt install -y software-properties-common lsb-release
+    apt clean all
+    wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
+    apt-add-repository "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main"
+    apt update
+    apt install -y kitware-archive-keyring
+    rm /etc/apt/trusted.gpg.d/kitware.gpg
+    apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6AF7F09730B3F0A4
+    apt update
+    apt install -y cmake
+
+    cd /opt/
+
+    git clone https://github.com/LLNL/sundials
+    cd sundials
+    mkdir build install
+    cd build
+    cmake -DCMAKE_INSTALL_PREFIX=../install -DCMAKE_C_COMPILER=$(which gcc) -DCMAKE_CXX_COMPILER=$(which g++) -DOPENMP_ENABLE=ON -DCUDA_ENABLE=OFF -DMPI_ENABLE=OFF ../
+    make -j
+    make install
+
+    cd /opt/
+
+    git clone https://github.com/AMReX-codes/amrex.git
+    cd amrex
+    mkdir build install
+    cd build
+    cmake .. -DENABLE_MPI=ON -DENABLE_AMRDATA=ON -DCMAKE_BUILD_TYPE=Release -DENABLE_DP=OFF -DENABLE_LINEAR_SOLVERS=OFF -DCMAKE_INSTALL_PREFIX=../install
+    make -j
+    make install
+
+    cd /opt/
+
+    git clone https://github.com/AMReX-Astro/Nyx.git
+    cd Nyx/Exec/LyA/
+    export AMREX_HOME=/opt/amrex/
+    export SUNDIALS_LIB_DIR=/opt/sundials/install/lib
+    export SUNDIALS_ROOT=/opt/sundials/install/
+    make
+
+%runscript
+    cd /opt/Nyx/Exec/LyA/
+    pwd
+    exec ./Nyx3d.gnu.TPROF.MPI.OMP.ex ./inputs
+
