@@ -1,0 +1,31 @@
+Bootstrap: docker
+From: nvidia/cuda:11.8.0-devel-ubuntu22.04
+
+%files
+
+%environment
+    export PATH=/root/cmake-3.25.1-linux-x86_64/bin:$PATH
+    export TZ="UTC"
+
+%post
+    apt-get -y update
+    DEBIAN_FRONTEND=noninteractive apt-get -y install build-essential git wget vim 
+    DEBIAN_FRONTEND=noninteractive apt-get -y install build-essential libboost-all-dev
+    cd /root
+    wget https://github.com/Kitware/CMake/releases/download/v3.24.3/cmake-3.24.3-linux-x86_64.tar.gz
+    tar zxvf cmake-3.24.3-linux-x86_64.tar.gz
+    git clone https://github.com/celerity/ndzip.git
+    cd ndzip
+    export CPATH=/usr/local/cuda/include:$CPATH
+    export CMAKE=/root/cmake-3.24.3-linux-x86_64/bin/cmake
+    CC=gcc CXX=g++ ${CMAKE} -B build \
+        -DCMAKE_CUDA_ARCHITECTURES="75;80;86" \
+	-DCMAKE_BUILD_TYPE=Release \
+	-DZIP_WITH_MT=YES \
+	-DNDZIP_WITH_CUDA=YES \
+	-DCMAKE_CXX_FLAGS="-march=native" 
+
+    ${CMAKE} --build build -j	
+    export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+%runscript
